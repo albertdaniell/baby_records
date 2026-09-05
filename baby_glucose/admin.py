@@ -1,3 +1,18 @@
 from django.contrib import admin
 
-# Register your models here.
+from .models import (
+    Baby,
+)
+
+
+@admin.register(Baby)
+class BabyAdmin(admin.ModelAdmin):
+
+    list_display = (
+        "id",
+        "baby_id",
+    )
+
+    search_fields = (
+        "baby_id",
+    )
