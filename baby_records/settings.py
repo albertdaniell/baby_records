@@ -166,3 +166,7 @@ MEDIA_ROOT = BASE_DIR / "media"
 CSRF_TRUSTED_ORIGINS = [
     "https://apeoi.kalro.org",
 ]
+
+UPCOMING_API_URL = (
+    "https://apeoi.kalro.org/drugsapi/upcoming/"
+)
