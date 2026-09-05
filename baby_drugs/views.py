@@ -666,6 +666,22 @@ from .serializers import DrugIntakeRecordSerializer
 #
 # /upcoming/?baby_id=49H0ZZUN&date=2026-09-05
 # =========================================================
+from datetime import timedelta
+
+from django.utils import timezone
+
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+from rest_framework import status
+
+from .models import (
+    BabyDrugSchedule,
+    DrugIntakeRecord,
+)
+
+from .serializers import (
+    BabyDrugScheduleSerializer,
+)
 
 
 @api_view(["GET"])
@@ -696,64 +712,26 @@ def upcoming_drugs(request):
 
 
     # =================================================
-    # GET REQUESTED DATE
-    # =================================================
-
-    requested_date = request.query_params.get(
-        "date"
-    )
-
-
-    # =================================================
-    # DETERMINE SELECTED DATE
-    # =================================================
-
-    if requested_date:
-
-        try:
-
-            selected_date = datetime_date.fromisoformat(
-                requested_date
-            )
-
-        except ValueError:
-
-            return Response(
-                {
-                    "error": (
-                        "Invalid date format. "
-                        "Use YYYY-MM-DD."
-                    )
-                },
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-    else:
-
-        selected_date = timezone.localdate()
-
-
-    # =================================================
     # CURRENT DATE AND TIME
     # =================================================
 
     now = timezone.localtime()
 
-    current_date = now.date()
+    today = now.date()
+
+    tomorrow = today + timedelta(days=1)
 
     current_time = now.time()
 
 
     # =================================================
-    # GET DRUG SCHEDULES
+    # GET ALL DRUG SCHEDULES FOR BABY
     #
     # IMPORTANT:
     #
-    # We query BabyDrugSchedule instead of
-    # DrugIntakeRecord.
-    #
-    # A drug should appear as upcoming even if
-    # an intake record has not been created yet.
+    # We use BabyDrugSchedule because upcoming drugs
+    # should appear even when DrugIntakeRecord has not
+    # yet been created.
     # =================================================
 
     schedules = (
@@ -762,8 +740,9 @@ def upcoming_drugs(request):
 
         .filter(
 
-            baby_drug_plan__baby__baby_id=
-            baby_id
+            baby_drug_plan__baby__baby_id=baby_id,
+
+            baby_drug_plan__is_active=True,
 
         )
 
@@ -789,87 +768,241 @@ def upcoming_drugs(request):
 
 
     # =================================================
-    # DETERMINE UPCOMING SCHEDULES
+    # VALID SCHEDULES FOR A SPECIFIC DATE
     #
-    # TODAY:
-    # Only drugs scheduled after the current time
+    # A plan is valid when:
     #
-    # FUTURE DATE:
-    # All schedules
+    # - start_date is empty OR start_date <= date
     #
-    # PAST DATE:
-    # No upcoming drugs
+    # AND
+    #
+    # - end_date is empty OR end_date >= date
     # =================================================
 
-    if selected_date == current_date:
+    def get_valid_schedules_for_date(target_date):
 
+        valid_schedules = schedules.filter(
 
-        upcoming_schedules = (
+            baby_drug_plan__start_date__isnull=True
+
+        )
+
+        valid_schedules = (
 
             schedules
 
             .filter(
 
-                scheduled_time__gt=
-                current_time
+                baby_drug_plan__is_active=True
+
+            )
+
+            .filter(
+
+                baby_drug_plan__start_date__lte=
+                target_date
+
+            )
+
+        )
+
+        return valid_schedules
+
+
+    # =================================================
+    # HELPER:
+    # GET UPCOMING DRUGS FOR DATE
+    # =================================================
+
+    def get_upcoming_for_date(
+        target_date,
+        is_today=False
+    ):
+
+
+        # =============================================
+        # GET VALID PLANS
+        # =============================================
+
+        date_schedules = (
+
+            schedules
+
+            .filter(
+
+                baby_drug_plan__is_active=True
+
+            )
+
+            .filter(
+
+                # Plan started already
+                baby_drug_plan__start_date__lte=
+                target_date
 
             )
 
         )
 
 
-    elif selected_date > current_date:
+        # =============================================
+        # HANDLE PLANS WITHOUT START DATE
+        #
+        # If your start_date is nullable, include them.
+        # =============================================
+
+        from django.db.models import Q
 
 
-        upcoming_schedules = schedules
+        date_schedules = (
 
+            schedules
 
-    else:
+            .filter(
 
+                baby_drug_plan__is_active=True
 
-        upcoming_schedules = schedules.none()
+            )
 
+            .filter(
 
-    # =================================================
-    # GET COMPLETED RECORDS
-    #
-    # If a drug has already been recorded as:
-    #
-    # taken
-    # missed
-    # skipped
-    #
-    # it should not appear in upcoming drugs.
-    # =================================================
+                Q(
+                    baby_drug_plan__start_date__isnull=True
+                )
 
-    completed_schedule_ids = (
+                |
 
-        DrugIntakeRecord.objects
+                Q(
+                    baby_drug_plan__start_date__lte=
+                    target_date
+                )
 
-        .filter(
+            )
 
-            schedule__in=
-            upcoming_schedules,
+            .filter(
 
-            date=selected_date,
+                Q(
+                    baby_drug_plan__end_date__isnull=True
+                )
 
-            status__in=[
+                |
 
-                "taken",
+                Q(
+                    baby_drug_plan__end_date__gte=
+                    target_date
+                )
 
-                "missed",
-
-                "skipped",
-
-            ],
+            )
 
         )
 
-        .values_list(
 
-            "schedule_id",
+        # =============================================
+        # TODAY:
+        #
+        # Only show drugs after current time
+        # =============================================
 
-            flat=True
+        if is_today:
+
+            date_schedules = (
+
+                date_schedules
+
+                .filter(
+
+                    scheduled_time__gt=
+                    current_time
+
+                )
+
+            )
+
+
+        # =============================================
+        # GET COMPLETED SCHEDULE IDS
+        #
+        # Do not show schedules that were already:
+        #
+        # taken
+        # missed
+        # skipped
+        # =============================================
+
+        completed_schedule_ids = (
+
+            DrugIntakeRecord.objects
+
+            .filter(
+
+                schedule__in=
+                date_schedules,
+
+                date=target_date,
+
+                status__in=[
+
+                    "taken",
+
+                    "missed",
+
+                    "skipped",
+
+                ],
+
+            )
+
+            .values_list(
+
+                "schedule_id",
+
+                flat=True
+
+            )
+
+        )
+
+
+        # =============================================
+        # REMOVE COMPLETED DRUGS
+        # =============================================
+
+        upcoming = (
+
+            date_schedules
+
+            .exclude(
+
+                id__in=
+                completed_schedule_ids
+
+            )
+
+            .order_by(
+
+                "scheduled_time",
+
+                "dose_order",
+
+            )
+
+        )
+
+
+        return upcoming
+
+
+    # =================================================
+    # GET TODAY'S UPCOMING DRUGS
+    # =================================================
+
+    today_schedules = (
+
+        get_upcoming_for_date(
+
+            target_date=today,
+
+            is_today=True
 
         )
 
@@ -877,75 +1010,140 @@ def upcoming_drugs(request):
 
 
     # =================================================
-    # REMOVE COMPLETED DRUGS
+    # GET TOMORROW'S DRUGS
     # =================================================
 
-    upcoming_schedules = (
+    tomorrow_schedules = (
 
-        upcoming_schedules
+        get_upcoming_for_date(
 
-        .exclude(
+            target_date=tomorrow,
 
-            id__in=
-            completed_schedule_ids
+            is_today=False
+
+        )
+
+    )
+
+
+    # =================================================
+    # SERIALIZE TODAY
+    # =================================================
+
+    today_serializer = (
+
+        BabyDrugScheduleSerializer(
+
+            today_schedules,
+
+            many=True,
+
+            context={
+                "request": request
+            }
 
         )
 
-        .order_by(
+    )
 
-            "scheduled_time",
 
-            "dose_order",
+    # =================================================
+    # SERIALIZE TOMORROW
+    # =================================================
+
+    tomorrow_serializer = (
+
+        BabyDrugScheduleSerializer(
+
+            tomorrow_schedules,
+
+            many=True,
+
+            context={
+                "request": request
+            }
 
         )
+
+    )
+
+
+    # =================================================
+    # ADD DATE TO EACH RESULT
+    #
+    # This makes frontend rendering much easier.
+    # =================================================
+
+    today_drugs = []
+
+
+    for drug in today_serializer.data:
+
+        today_drugs.append({
+
+            **drug,
+
+            "scheduled_date":
+                str(today),
+
+            "day":
+                "today",
+
+        })
+
+
+    tomorrow_drugs = []
+
+
+    for drug in tomorrow_serializer.data:
+
+        tomorrow_drugs.append({
+
+            **drug,
+
+            "scheduled_date":
+                str(tomorrow),
+
+            "day":
+                "tomorrow",
+
+        })
+
+
+    # =================================================
+    # COMBINED UPCOMING DRUGS
+    #
+    # Today first, then tomorrow
+    # =================================================
+
+    upcoming_drugs_list = (
+
+        today_drugs +
+
+        tomorrow_drugs
 
     )
 
 
     # =================================================
     # NEXT DRUG
+    #
+    # First remaining drug today.
+    #
+    # If none today, first drug tomorrow.
     # =================================================
-
-    next_schedule = (
-
-        upcoming_schedules
-
-        .first()
-
-    )
-
 
     next_drug = None
 
 
-    if next_schedule:
+    if len(today_drugs) > 0:
 
-        next_drug = BabyDrugScheduleSerializer(
-
-            next_schedule,
-
-            context={
-                "request": request
-            }
-
-        ).data
+        next_drug = today_drugs[0]
 
 
-    # =================================================
-    # SERIALIZE UPCOMING DRUGS
-    # =================================================
+    elif len(tomorrow_drugs) > 0:
 
-    serializer = BabyDrugScheduleSerializer(
-
-        upcoming_schedules,
-
-        many=True,
-
-        context={
-            "request": request
-        }
-
-    )
+        next_drug = tomorrow_drugs[0]
 
 
     # =================================================
@@ -956,11 +1154,19 @@ def upcoming_drugs(request):
 
         {
 
-            "baby_id": baby_id,
+            "baby_id":
 
-            "date": str(
-                selected_date
-            ),
+                baby_id,
+
+
+            # =========================================
+            # CURRENT INFORMATION
+            # =========================================
+
+            "current_date":
+
+                str(today),
+
 
             "current_time":
 
@@ -968,17 +1174,80 @@ def upcoming_drugs(request):
                     "%H:%M:%S"
                 ),
 
+
+            # =========================================
+            # TODAY
+            # =========================================
+
+            "today": {
+
+                "date":
+
+                    str(today),
+
+
+                "count":
+
+                    len(today_drugs),
+
+
+                "drugs":
+
+                    today_drugs,
+
+            },
+
+
+            # =========================================
+            # TOMORROW
+            # =========================================
+
+            "tomorrow": {
+
+                "date":
+
+                    str(tomorrow),
+
+
+                "count":
+
+                    len(tomorrow_drugs),
+
+
+                "drugs":
+
+                    tomorrow_drugs,
+
+            },
+
+
+            # =========================================
+            # TOTAL
+            # =========================================
+
             "upcoming_count":
 
-                upcoming_schedules.count(),
+                len(
+                    upcoming_drugs_list
+                ),
+
+
+            # =========================================
+            # NEXT DRUG
+            # =========================================
 
             "next_drug":
 
                 next_drug,
 
+
+            # =========================================
+            # ALL UPCOMING
+            # =========================================
+
             "upcoming":
 
-                serializer.data,
+                upcoming_drugs_list,
 
         },
 
