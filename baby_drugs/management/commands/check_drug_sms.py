@@ -325,7 +325,7 @@ class Command(BaseCommand):
 
             if not (
 
-                0 <= minutes_until <= 10
+                9 <= minutes_until <= 10
 
             ):
 
