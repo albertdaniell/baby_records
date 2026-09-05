@@ -25,7 +25,15 @@ SECRET_KEY = 'django-insecure-*4+--8q(m(d$&=^lgmg*3df4%n3tsez(3!&bn1uer%k$shg%q9
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['*']
+ALLOWED_HOSTS = [
+
+    "apeoi.kalro.org",
+
+    "localhost",
+
+    "127.0.0.1",
+
+]
 
 
 # Application definition
@@ -146,6 +154,10 @@ CORS_ALLOWED_ORIGINS = [
 
 ]
 
+
+STATIC_URL = "/static/"
+
+STATIC_ROOT = BASE_DIR / "staticfiles"
 
 MEDIA_URL = "/media/"
 
