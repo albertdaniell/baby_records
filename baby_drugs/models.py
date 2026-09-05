@@ -248,17 +248,17 @@ class BabyDrugSchedule(models.Model):
             "dose_order",
         ]
 
-        constraints = [
+        # constraints = [
 
-            models.UniqueConstraint(
-                fields=[
-                    "baby_drug_plan",
-                    "dose_order",
-                ],
-                name="unique_dose_order_per_plan",
-            )
+        #     models.UniqueConstraint(
+        #         fields=[
+        #             "baby_drug_plan",
+        #             "dose_order",
+        #         ],
+        #         name="unique_dose_order_per_plan",
+        #     )
 
-        ]
+        # ]
 
     def __str__(self):
 
