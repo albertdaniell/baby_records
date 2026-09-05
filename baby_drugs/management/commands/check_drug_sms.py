@@ -17,7 +17,7 @@ from baby_drugs.services.sms import Send_SMS_API
 # False = Only send when drug is within 10 minutes
 # =========================================================
 
-TEST_MODE = False
+TEST_MODE = True
 
 
 class Command(BaseCommand):
