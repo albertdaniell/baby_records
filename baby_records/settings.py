@@ -41,7 +41,8 @@ INSTALLED_APPS = [
     'corsheaders',
     'import_export',
     'django_crontab',
-    'rest_framework'
+    'rest_framework',
+    'baby_drugs'
 ]
 
 MIDDLEWARE = [
@@ -140,8 +141,12 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 CORS_ALLOWED_ORIGINS = [
 
     "http://localhost:3000",
-
     "http://127.0.0.1:3000",
     "https://apeoi.kalro.org",
 
 ]
+
+
+MEDIA_URL = "/media/"
+
+MEDIA_ROOT = BASE_DIR / "media"
